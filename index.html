@@ -109,7 +109,23 @@ function download(name,text,type){let blob=new Blob([text],{type}),url=URL.creat
 async function restore(e){alert('Pemulihan backup langsung dinonaktifkan demi keamanan database bersama. Gunakan migrasi data terverifikasi oleh administrator.')}
 (async()=>{try{const {data}=await cloud.auth.getUser();if(data.user){await loadProfile(data.user);document.getElementById('login').style.display='none';document.getElementById('app').style.display='block';await render()}}catch(e){console.error(e)}})();document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('login').style.display!=='none'&&document.activeElement?.closest('.loginbox'))login()});
 
-async function loadProfile(user){const {data,error}=await cloud.from('sms_profiles').select('role,display_name').eq('user_id',user.id).single();if(error||!data)throw Error('Akun belum diberi hak akses oleh administrator');current={id:user.id,name:user.email,role:data.role==='admin'?'Admin Warehouse':'Department User'};}
+async function loadProfile(user){
+  if(!user?.id) throw Error('Sesi login tidak valid. Silakan masuk kembali.');
+  const {data,error,status}=await cloud.from('sms_profiles')
+    .select('role,display_name').eq('user_id',user.id).maybeSingle();
+  if(error){
+    console.error('SMS profile lookup failed', {code:error.code,status,message:error.message,details:error.details,hint:error.hint});
+    throw Error('Gagal membaca profil Supabase ('+(error.code||status||'unknown')+'): '+error.message);
+  }
+  if(!data){
+    console.warn('SMS profile missing or not visible to authenticated user');
+    throw Error('Profil tidak ditemukan atau tidak terlihat oleh akun ini. Periksa sms_profiles dan kebijakan RLS SELECT.');
+  }
+  if(!['admin','user'].includes(data.role)){
+    throw Error('Role profil tidak dikenal: '+String(data.role));
+  }
+  current={id:user.id,name:user.email,role:data.role==='admin'?'Admin Warehouse':'Department User'};
+}
 async function mutate(action,payload){const {error}=await cloud.rpc('sms_mutate',{action,payload});if(error){alert('Gagal menyimpan: '+error.message);throw error;}}
 cloud.channel('sms-realtime').on('postgres_changes',{event:'*',schema:'public',table:'sms_items'},()=>{if(current)render()}).subscribe();
 </script></body></html>
